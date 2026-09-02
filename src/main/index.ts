@@ -1,11 +1,41 @@
-import { join } from 'path';
+import { join, dirname } from 'path';
 import fs from 'fs';
 import { app, shell, BrowserWindow, ipcMain, dialog, clipboard } from 'electron';
+import log from 'electron-log/main';
 import ytdl from '@distube/ytdl-core';
 import { IPC, DownloadRequest, DownloadResult } from '../shared/ipc';
 import { resolveDownloadOptions, buildOutputPath } from './download';
 
 const isDev = !app.isPackaged;
+
+// A desktop User-Agent reduces (does not eliminate) YouTube "confirm you're not
+// a bot" responses on requests made without a signed-in session.
+const requestOptions = {
+  headers: {
+    'user-agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+  }
+};
+
+function setupLogging(): void {
+  log.initialize();
+  log.transports.file.level = 'info';
+  log.transports.console.level = 'debug';
+  log.errorHandler.startCatching();
+  log.info(`Starting YouTube Downloader ${app.getVersion()} (dev=${isDev})`);
+  log.info(`Log file: ${log.transports.file.getFile().path}`);
+}
+
+/** Reject if `promise` does not settle within `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms)
+    )
+  ]);
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -27,13 +57,11 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => mainWindow.show());
 
-  // Open external links in the user's browser, never inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  // electron-vite injects the dev server URL in development.
   if (isDev && process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
@@ -52,10 +80,21 @@ function registerIpcHandlers(): void {
     return result.filePaths[0];
   });
 
+  ipcMain.handle(IPC.openLogs, () =>
+    shell.openPath(dirname(log.transports.file.getFile().path))
+  );
+
+  // Forward renderer-side logs/errors into the same log file.
+  ipcMain.on(IPC.rendererLog, (_event, level: string, message: string) => {
+    if (level === 'error') log.error(`[renderer] ${message}`);
+    else log.info(`[renderer] ${message}`);
+  });
+
   ipcMain.handle(
     IPC.download,
     async (event, req: DownloadRequest): Promise<DownloadResult> => {
       const { url, format, quality, destDir } = req;
+      log.info(`Download requested: ${format}/${quality} ${url} -> ${destDir}`);
 
       if (!url || !ytdl.validateURL(url)) {
         return { ok: false, error: 'Please paste a valid YouTube URL.' };
@@ -68,13 +107,19 @@ function registerIpcHandlers(): void {
 
       let title: string;
       try {
-        const info = await ytdl.getInfo(url);
+        const info = await withTimeout(
+          ytdl.getInfo(url, { requestOptions }),
+          30000,
+          'Fetching video info'
+        );
         title = info.videoDetails.title;
-      } catch {
+        log.info(`Video info OK: "${title}"`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.error('getInfo failed:', message);
         return {
           ok: false,
-          error:
-            'Could not fetch the video. It may be private, age-restricted or unavailable.'
+          error: `Could not fetch the video: ${message}`
         };
       }
 
@@ -85,12 +130,15 @@ function registerIpcHandlers(): void {
         options.container,
         fs.existsSync
       );
+      log.info(`Saving to: ${filePath}`);
 
       return new Promise<DownloadResult>((resolve) => {
         let settled = false;
         const finish = (result: DownloadResult): void => {
           if (settled) return;
           settled = true;
+          if (result.ok) log.info(`Download finished: ${result.filePath}`);
+          else log.error(`Download failed: ${result.error}`);
           resolve(result);
         };
 
@@ -98,13 +146,12 @@ function registerIpcHandlers(): void {
         try {
           stream = ytdl(url, {
             filter: options.filter,
-            quality: options.quality
+            quality: options.quality,
+            requestOptions
           });
-        } catch {
-          finish({
-            ok: false,
-            error: 'The selected format is not available for this video.'
-          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          finish({ ok: false, error: `The selected format is not available: ${message}` });
           return;
         }
 
@@ -128,9 +175,7 @@ function registerIpcHandlers(): void {
         });
 
         file.on('finish', () => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send(IPC.progress, 100);
-          }
+          if (!event.sender.isDestroyed()) event.sender.send(IPC.progress, 100);
           finish({ ok: true, filePath, title });
         });
 
@@ -141,6 +186,7 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  setupLogging();
   registerIpcHandlers();
   createWindow();
 

@@ -39,7 +39,8 @@
     "package-linux": "npm run build && electron-builder --linux --publish never"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12"
+    "@distube/ytdl-core": "^4.16.12",
+    "electron-log": "^5.4.4"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

@@ -7,6 +7,10 @@ type Status = 'idle' | 'downloading' | 'done' | 'error';
 const RADIUS = 47;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export default function App(): JSX.Element {
   const [url, setUrl] = useState('');
   const [mediaType, setMediaType] = useState<MediaType>('mp4');
@@ -15,15 +19,43 @@ export default function App(): JSX.Element {
   const [status, setStatus] = useState<Status>('idle');
   const [message, setMessage] = useState('');
 
+  const fail = (msg: string): void => {
+    setStatus('error');
+    setMessage(msg);
+    window.api?.log('error', msg);
+  };
+
   useEffect(() => {
-    return window.api.onProgress((percent) => setProgress(Math.floor(percent)));
+    if (!window.api) {
+      fail('Internal error: the app API failed to load. Please reinstall.');
+      return;
+    }
+    const unsubscribe = window.api.onProgress((percent) =>
+      setProgress(Math.floor(percent))
+    );
+
+    const onError = (e: ErrorEvent): void => fail(messageOf(e.error ?? e.message));
+    const onRejection = (e: PromiseRejectionEvent): void => fail(messageOf(e.reason));
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
   }, []);
 
   const paste = async (): Promise<void> => {
-    const text = await window.api.readClipboard();
-    if (text) {
-      setUrl(text);
-      setMessage('');
+    try {
+      const text = await window.api.readClipboard();
+      if (text) {
+        setUrl(text);
+        setMessage('');
+        if (status === 'error') setStatus('idle');
+      }
+    } catch (err) {
+      fail(`Could not read the clipboard: ${messageOf(err)}`);
     }
   };
 
@@ -31,36 +63,37 @@ export default function App(): JSX.Element {
     if (status === 'downloading') return;
 
     if (!url.trim()) {
-      setStatus('error');
-      setMessage('Please paste a YouTube URL first.');
+      fail('Please paste a YouTube URL first.');
       return;
     }
 
-    const destDir = await window.api.chooseFolder();
-    if (!destDir) {
-      setStatus('error');
-      setMessage('Select a folder to download the file into.');
-      return;
-    }
+    try {
+      const destDir = await window.api.chooseFolder();
+      if (!destDir) {
+        fail('Select a folder to download the file into.');
+        return;
+      }
 
-    setStatus('downloading');
-    setMessage('');
-    setProgress(0);
+      setStatus('downloading');
+      setMessage('');
+      setProgress(0);
 
-    const result = await window.api.download({
-      url: url.trim(),
-      format: mediaType,
-      quality,
-      destDir
-    });
+      const result = await window.api.download({
+        url: url.trim(),
+        format: mediaType,
+        quality,
+        destDir
+      });
 
-    if (result.ok) {
-      setStatus('done');
-      setProgress(100);
-      setMessage(`Saved “${result.title}”.`);
-    } else {
-      setStatus('error');
-      setMessage(result.error);
+      if (result.ok) {
+        setStatus('done');
+        setProgress(100);
+        setMessage(`Saved “${result.title}”.`);
+      } else {
+        fail(result.error);
+      }
+    } catch (err) {
+      fail(`Unexpected error: ${messageOf(err)}`);
     }
   };
 
@@ -182,6 +215,14 @@ export default function App(): JSX.Element {
         ) : (
           <p className="status-hint">&nbsp;</p>
         )}
+
+        <button
+          type="button"
+          className="link-btn"
+          onClick={() => window.api?.openLogs()}
+        >
+          Open logs
+        </button>
       </div>
     </div>
   );

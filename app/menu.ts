@@ -35,9 +35,7 @@ export default class MenuBuilder {
   }
 
   setupEnvironment() {
-    this.mainWindow.webContents.on('context-menu', (_, props) => {
-      const { x, y } = props;
-
+    this.mainWindow.webContents.on('context-menu', () => {
       Menu.buildFromTemplate([
         {
           label: 'Paste',

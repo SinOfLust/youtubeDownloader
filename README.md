@@ -1,55 +1,71 @@
-# youtubeDownloader
+# YouTube Downloader
 
-A simple YouTube downloader made with Electron, React and TypeScript.
-Guaranteed without malware or malicious code.
+A simple desktop app to download YouTube videos (MP4) or audio (MP3).
+Built with **Electron + Vite + React + TypeScript**. No malware, no ads.
 
 ## Features
 
 - Paste a YouTube URL and download it as **MP4** (video) or **MP3** (audio only)
 - Choose the highest or lowest available quality
-- Live download progress
-- Cross-platform (Windows, macOS, Linux)
+- Live circular progress
+- Ships as a classic installer (Windows `.exe` wizard, macOS `.dmg`,
+  Linux AppImage/deb)
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) and [Yarn](https://yarnpkg.com/)
+- [Node.js](https://nodejs.org/) **18, 20 or newer** (includes npm)
 
-## Install & run from source
+## Run from source
 
 ```bash
 git clone https://github.com/SinOfLust/youtubeDownloader.git
 cd youtubeDownloader
-yarn
-yarn dev      # run in development
+npm install
+npm run dev
 ```
 
-## Build a distributable
+## Build an installer
 
 ```bash
-yarn package
+npm run package          # for the current OS
+npm run package-win      # Windows .exe (NSIS wizard)
+npm run package-mac      # macOS .dmg
+npm run package-linux    # Linux AppImage + .deb
 ```
 
-The installer is generated in the `release/` folder
-(e.g. `youtubeDownloader Setup x.x.x.exe` on Windows).
+Installers are written to the `release/` folder. On Windows the wizard lets the
+user pick the install folder and creates desktop / start-menu shortcuts, so it
+installs like any classic application.
 
-## Notes
+## Project layout
 
+```
+src/
+  main/       Electron main process (window + download over IPC)
+  preload/    Secure contextBridge API exposed to the renderer
+  renderer/   React UI
+  shared/     Types shared across processes
+```
+
+## Architecture / security notes
+
+- `contextIsolation` is on and `nodeIntegration` is off. The renderer never
+  touches Node directly; it talks to the main process through a small, typed
+  `window.api` exposed by the preload script.
 - Downloads use [`@distube/ytdl-core`](https://github.com/distubejs/ytdl-core),
   an actively maintained fork that tracks changes to YouTube. If a download
-  ever stops working, update it with `yarn upgrade @distube/ytdl-core` inside
-  the `app/` package.
-- MP4 downloads pick a single stream that already contains both audio and
-  video, so the saved file plays without any extra processing.
-- MP3 downloads save the raw audio track under an `.mp3` name. They are **not**
-  re-encoded to the MP3 codec (that would require bundling FFmpeg); the file is
-  the original audio stream and plays in most modern players.
+  ever stops working, update it: `npm install @distube/ytdl-core@latest`.
+- MP4 downloads pick a single stream that already contains audio and video, so
+  the saved file plays without any extra processing.
+- MP3 downloads save the raw audio track under an `.mp3` name; they are not
+  re-encoded to the MP3 codec (that would require bundling FFmpeg).
 
-## Development scripts
+## Scripts
 
-| Command       | Description                        |
-| ------------- | ---------------------------------- |
-| `yarn dev`    | Run the app with hot reload        |
-| `yarn lint`   | Lint the source                    |
-| `yarn ts`     | Type-check with TypeScript         |
-| `yarn test`   | Run the unit tests                 |
-| `yarn package`| Build a distributable installer    |
+| Command             | Description                          |
+| ------------------- | ------------------------------------ |
+| `npm run dev`       | Run the app with hot reload          |
+| `npm run build`     | Build main/preload/renderer bundles  |
+| `npm run typecheck` | Type-check every process             |
+| `npm test`          | Run the unit tests (Vitest)          |
+| `npm run package`   | Build a distributable installer      |

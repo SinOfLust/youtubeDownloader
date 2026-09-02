@@ -1,0 +1,248 @@
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4vh 16px 16px;
+}
+
+/* Header */
+.app-header {
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.app-logo {
+  color: var(--accent);
+  line-height: 0;
+  display: inline-block;
+}
+
+.app-title {
+  margin: 8px 0 2px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.app-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* Card */
+.card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* URL row */
+.url-row {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+}
+
+.url-input {
+  flex: 1;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.url-input:focus {
+  border-color: var(--accent);
+}
+
+.url-input::placeholder {
+  color: var(--text-dim);
+}
+
+.btn-paste {
+  height: 44px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-paste:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Options */
+.options {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+  margin: 22px 0 6px;
+}
+
+.option-group {
+  flex: 1;
+}
+
+.option-label {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.segmented {
+  display: flex;
+  background: var(--input-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.seg {
+  flex: 1;
+  height: 36px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.seg:hover {
+  color: var(--text);
+}
+
+.seg.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(255, 0, 51, 0.35);
+}
+
+/* Download button with SVG progress ring */
+.download-zone {
+  margin: 26px 0 6px;
+}
+
+.download-btn {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+}
+
+.download-btn:disabled {
+  cursor: default;
+}
+
+.progress-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ring-trail {
+  stroke: rgba(255, 255, 255, 0.12);
+}
+
+.ring-progress {
+  stroke: var(--accent);
+  transition: stroke-dashoffset 0.25s ease;
+}
+
+.download-btn.done .ring-progress {
+  stroke: #35c26b;
+}
+
+.download-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+  transition: color 0.15s ease;
+  pointer-events: none;
+}
+
+.download-btn:hover:not(:disabled) .download-label {
+  color: #fff;
+}
+
+.download-btn.done .download-label {
+  color: #35c26b;
+}
+
+/* Status line */
+.status-error,
+.status-ok,
+.status-hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+  min-height: 1.2em;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.status-error {
+  color: #ff6b6b;
+  font-weight: 600;
+}
+
+.status-ok {
+  color: #35c26b;
+  font-weight: 600;
+}
+
+.status-ok span,
+.status-error span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,35 @@
+:root {
+  --accent: #ff0033;
+  --bg-top: #1b1e27;
+  --bg-bottom: #0f1117;
+  --card: rgba(255, 255, 255, 0.04);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --text: #f5f6fa;
+  --text-dim: #9aa0ad;
+  --input-bg: rgba(255, 255, 255, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: radial-gradient(
+    circle at 50% 0%,
+    var(--bg-top) 0%,
+    var(--bg-bottom) 70%
+  );
+  font-family:
+    'Segoe UI', Roboto, Helvetica, Arial, system-ui, sans-serif;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}

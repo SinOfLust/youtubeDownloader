@@ -1,3 +1,21 @@
+# 2.0.0
+- Full modernization so the app builds and runs on current Node (18/20/22).
+  Rebuilt on **electron-vite + Vite 5 + React 18 + TypeScript 5**, replacing the
+  2020-era electron-react-boilerplate stack (webpack 4, Babel, node-sass) that
+  no longer installs on modern Node and carried 400+ known vulnerabilities.
+- Upgraded Electron 7 → 31 with a secure model: `contextIsolation` on,
+  `nodeIntegration` off, a typed `window.api` exposed via a preload
+  `contextBridge`, and downloads driven over `ipcMain.handle` (no `remote`).
+- Dropped Redux — the small UI now uses local React state and calls the
+  preload API directly.
+- Replaced the icon-font/CDN dependency with inline SVG icons and the
+  rc-progress ring with a pure-SVG progress ring (no external requests; strict
+  Content-Security-Policy).
+- Packaging unchanged in spirit: `electron-builder` still produces a classic
+  NSIS install wizard on Windows, plus `.dmg` (macOS) and AppImage/`.deb`
+  (Linux).
+- Tests run on Vitest.
+
 # 1.1.0
 - Migrate the tooling from Yarn to npm: all scripts use `npm run`, removed the
   Yarn-only preinstall gate, `yarn.lock` files and the bundled `yarn` dep, and

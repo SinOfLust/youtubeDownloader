@@ -1,14 +1,10 @@
 name: Test
 
-on: push
+on: [push, pull_request]
 
 jobs:
-  release:
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+  test:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out Git repository
@@ -17,19 +13,17 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 14
+          node-version: 20
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Package, lint and type-check
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npm run package-ci
-          npm run lint
-          npm run ts
+      - name: Type-check
+        run: npm run typecheck
 
-# Failing because virtual framebuffer not installed
-#          npm run build-e2e
-#          npm run test-e2e
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

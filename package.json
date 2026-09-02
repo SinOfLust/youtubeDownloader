@@ -1,7 +1,7 @@
 {
   "name": "YoutubeDownloader",
   "productName": "YoutubeDownloader",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Youtube video downloader ! ",
   "scripts": {
     "build": "concurrently \"yarn build-main\" \"yarn build-renderer\"",
@@ -78,8 +78,21 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "msi"
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": true,
+      "installerLanguages": [
+        "en_US",
+        "fr_FR"
       ]
     },
     "linux": {
@@ -136,9 +149,6 @@
     "moduleDirectories": [
       "node_modules",
       "app/node_modules"
-    ],
-    "setupFiles": [
-      "./internals/scripts/CheckBuildsExist.js"
     ]
   },
   "devDependencies": {

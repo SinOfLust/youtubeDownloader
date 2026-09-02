@@ -1,142 +1,181 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Circle } from 'rc-progress';
-import listeners from './listeners';
+import registerListeners from './listeners';
+import { OpenDialogResult } from '../actions/path';
 
 type Props = {
-  updateUrl: (value: any) => void;
-  updateFormat: (value: any) => void;
-  updatePath: (value: any) => void;
+  updateUrl: (value: string) => void;
+  updateFormat: (value: string) => void;
+  updatePath: (value: OpenDialogResult) => void;
 };
+
+type MediaType = 'mp4' | 'mp3';
+type Quality = 'highest' | 'lowest';
 
 export default function Downloader(props: Props) {
   const { updateUrl, updateFormat, updatePath } = props;
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
   const [inputValue, setInputValue] = useState('');
+  const [mediaType, setMediaType] = useState<MediaType>('mp4');
+  const [quality, setQuality] = useState<Quality>('highest');
   const [buttonText, setButtonText] = useState('Download');
-  listeners(setErrorMessage, setInputValue, setDownloadProgress, setButtonText);
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  const handleRadioChange = (e: any) => {
-    const { value } = e.target;
-    updateFormat(value);
-  };
+  useEffect(() => {
+    return registerListeners({
+      setErrorMessage,
+      setInputValue,
+      setDownloadProgress,
+      setButtonText,
+      setIsDownloading
+    });
+  }, []);
+
+  // Keep the main process in sync with the current format selection.
+  useEffect(() => {
+    updateFormat(`${mediaType} ${quality}`);
+  }, [mediaType, quality, updateFormat]);
 
   const updateURL = (url: string) => {
     updateUrl(url);
     setInputValue(url);
   };
 
-  const handleUrlChange = (e: any) => {
-    const { value } = e.target;
-    updateURL(value);
-  };
-
   const paste = () => {
+    // eslint-disable-next-line global-require
     const { clipboard } = require('electron').remote;
-    const url = clipboard.readText();
-    updateURL(url);
-  };
-
-  const submit = path => {
-    setButtonText('Uploading');
-    updatePath(path);
+    updateURL(clipboard.readText().trim());
   };
 
   const handleSubmit = async () => {
+    if (isDownloading) return;
+
+    if (!inputValue) {
+      setErrorMessage('Please paste a YouTube URL first.');
+      return;
+    }
+
+    // eslint-disable-next-line global-require
     const { dialog } = require('electron').remote;
-    const path = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-    path.canceled ? setErrorMessage('Select a path to download the file') : submit(path);
+    const result: OpenDialogResult = await dialog.showOpenDialog({
+      properties: ['openDirectory']
+    });
+
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      setErrorMessage('Select a folder to download the file into.');
+      return;
+    }
+
+    setErrorMessage('');
+    setDownloadProgress(0);
+    setIsDownloading(true);
+    setButtonText('Starting…');
+    updatePath(result);
   };
 
+  const isDone = downloadProgress >= 100;
+
   return (
-    <div className="container">
-      <label>
-        <input
-          value={inputValue}
-          onClick={paste}
-          type="text"
-          placeholder="Click here to paste the youtube URL here"
-          onChange={handleUrlChange}
-        />
-      </label>
+    <div className="app">
+      <header className="app-header">
+        <span className="app-logo">
+          <i className="fab fa-youtube" />
+        </span>
+        <h1 className="app-title">YouTube Downloader</h1>
+        <p className="app-subtitle">Paste a link, pick a format, download.</p>
+      </header>
 
-      <div className="format">
-        <h4>Video</h4>
-        <div className="formatBloc">
-          <div>
-            <input
-              type="radio"
-              id="MP4highest"
-              name="format"
-              value="mp4 highest"
-              onChange={handleRadioChange}
-            />
-            <label htmlFor="MP4highest">
-              <span />
-              MP4 Highest
-            </label>
+      <div className="card">
+        <div className="url-row">
+          <input
+            className="url-input"
+            value={inputValue}
+            type="text"
+            placeholder="https://www.youtube.com/watch?v=…"
+            onChange={e => updateURL(e.target.value)}
+            spellCheck={false}
+          />
+          <button type="button" className="btn-paste" onClick={paste}>
+            <i className="fas fa-paste" />
+            <span>Paste</span>
+          </button>
+        </div>
+
+        <div className="options">
+          <div className="option-group">
+            <span className="option-label">Format</span>
+            <div className="segmented">
+              <button
+                type="button"
+                className={mediaType === 'mp4' ? 'seg active' : 'seg'}
+                onClick={() => setMediaType('mp4')}
+              >
+                <i className="fas fa-film" />
+                <span>MP4</span>
+              </button>
+              <button
+                type="button"
+                className={mediaType === 'mp3' ? 'seg active' : 'seg'}
+                onClick={() => setMediaType('mp3')}
+              >
+                <i className="fas fa-music" />
+                <span>MP3</span>
+              </button>
+            </div>
           </div>
 
-          <div>
-            <input
-              type="radio"
-              id="MP4lowest"
-              name="format"
-              value="mp4 lowest"
-              onChange={handleRadioChange}
-            />
-            <label htmlFor="MP4lowest">
-              <span />
-              MP4 Lowest
-            </label>
+          <div className="option-group">
+            <span className="option-label">Quality</span>
+            <div className="segmented">
+              <button
+                type="button"
+                className={quality === 'highest' ? 'seg active' : 'seg'}
+                onClick={() => setQuality('highest')}
+              >
+                Highest
+              </button>
+              <button
+                type="button"
+                className={quality === 'lowest' ? 'seg active' : 'seg'}
+                onClick={() => setQuality('lowest')}
+              >
+                Lowest
+              </button>
+            </div>
           </div>
         </div>
-        <h4>Audio Only</h4>
 
-        <div className="formatBloc">
-          <div>
-            <input
-              type="radio"
-              id="MP3highest"
-              name="format"
-              value="mp3 highest"
-              onChange={handleRadioChange}
+        <div className="download-zone">
+          <button
+            type="button"
+            className={`download-btn${isDownloading ? ' downloading' : ''}${
+              isDone ? ' done' : ''
+            }`}
+            onClick={handleSubmit}
+            disabled={isDownloading}
+          >
+            <Circle
+              className="progress-ring"
+              percent={downloadProgress}
+              strokeWidth={5}
+              trailWidth={5}
+              strokeColor="#ff0033"
+              trailColor="rgba(255,255,255,0.12)"
             />
-            <label htmlFor="MP3highest">
-              <span />
-              MP3 Highest
-            </label>
-          </div>
-          <div>
-            <input
-              type="radio"
-              id="MP3lowest"
-              name="format"
-              value="mp3 lowest"
-              onChange={handleRadioChange}
-            />
-            <label htmlFor="MP3lowest">
-              <span />
-              MP3 Lowest
-            </label>
-          </div>
+            <span className="download-label">{buttonText}</span>
+          </button>
         </div>
-      </div>
 
-      <div className="circleContainer">
-        <Circle
-          onClick={handleSubmit}
-          id="circle"
-          style={{ marginTop: 20 }}
-          percent={downloadProgress}
-          strokeWidth={3}
-          strokeColor="#DC493A"
-        />
-        <h2 onClick={handleSubmit} id="submit">
-          {buttonText}
-        </h2>
+        {errorMessage ? (
+          <p className="status-error">
+            <i className="fas fa-circle-exclamation" />
+            <span>{errorMessage}</span>
+          </p>
+        ) : (
+          <p className="status-hint">&nbsp;</p>
+        )}
       </div>
-      <p style={{ color: 'red', fontWeight: 'bold' }}>{errorMessage}</p>
     </div>
   );
 }

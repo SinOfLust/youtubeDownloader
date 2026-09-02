@@ -12,32 +12,33 @@ Guaranteed without malware or malicious code.
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) and [Yarn](https://yarnpkg.com/)
+- [Node.js](https://nodejs.org/) (includes npm)
 
 ## Install & run from source
 
 ```bash
 git clone https://github.com/SinOfLust/youtubeDownloader.git
 cd youtubeDownloader
-yarn
-yarn dev      # run in development
+npm install
+npm run dev      # run in development
 ```
 
 ## Build a distributable
 
 ```bash
-yarn package
+npm run package
 ```
 
-The installer is generated in the `release/` folder
-(e.g. `youtubeDownloader Setup x.x.x.exe` on Windows).
+On Windows this produces a classic install wizard in the `release/` folder
+(`youtubeDownloader Setup x.x.x.exe`) that lets the user choose the install
+folder and creates desktop / start-menu shortcuts.
 
 ## Notes
 
 - Downloads use [`@distube/ytdl-core`](https://github.com/distubejs/ytdl-core),
   an actively maintained fork that tracks changes to YouTube. If a download
-  ever stops working, update it with `yarn upgrade @distube/ytdl-core` inside
-  the `app/` package.
+  ever stops working, update it with `npm install @distube/ytdl-core@latest`
+  inside the `app/` folder.
 - MP4 downloads pick a single stream that already contains both audio and
   video, so the saved file plays without any extra processing.
 - MP3 downloads save the raw audio track under an `.mp3` name. They are **not**
@@ -46,10 +47,10 @@ The installer is generated in the `release/` folder
 
 ## Development scripts
 
-| Command       | Description                        |
-| ------------- | ---------------------------------- |
-| `yarn dev`    | Run the app with hot reload        |
-| `yarn lint`   | Lint the source                    |
-| `yarn ts`     | Type-check with TypeScript         |
-| `yarn test`   | Run the unit tests                 |
-| `yarn package`| Build a distributable installer    |
+| Command            | Description                     |
+| ------------------ | ------------------------------- |
+| `npm run dev`      | Run the app with hot reload     |
+| `npm run lint`     | Lint the source                 |
+| `npm run ts`       | Type-check with TypeScript      |
+| `npm test`         | Run the unit tests              |
+| `npm run package`  | Build a distributable installer |

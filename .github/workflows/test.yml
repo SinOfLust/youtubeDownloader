@@ -8,29 +8,28 @@ jobs:
 
     strategy:
       matrix:
-        os: [macos-10.14, windows-2019, ubuntu-18.04]
+        os: [macos-latest, windows-latest, ubuntu-latest]
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
-      - name: Install Node.js, NPM and Yarn
-        uses: actions/setup-node@v1
+      - name: Install Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 13
+          node-version: 14
 
-      - name: yarn install
-        run: |
-          yarn install
+      - name: Install dependencies
+        run: npm install
 
-      - name: yarn test
+      - name: Package, lint and type-check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          yarn package-ci
-          yarn lint
-          yarn ts
+          npm run package-ci
+          npm run lint
+          npm run ts
 
 # Failing because virtual framebuffer not installed
-#          yarn build-e2e
-#          yarn test-e2e
+#          npm run build-e2e
+#          npm run test-e2e

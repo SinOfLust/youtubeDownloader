@@ -1,4 +1,9 @@
 # 1.1.0
+- Migrate the tooling from Yarn to npm: all scripts use `npm run`, removed the
+  Yarn-only preinstall gate, `yarn.lock` files and the bundled `yarn` dep, and
+  regenerated `package-lock.json`. Install and run with `npm install` / `npm run dev`
+- Remove the invalid legacy `devEngines` field that broke `npm install` on modern npm
+- Convert the GitHub Actions and Azure pipelines to npm (and off removed CI images)
 - Fix downloading with modern YouTube by switching to the maintained `@distube/ytdl-core` fork
 - Read the video title from `videoDetails` (the old `info.title` no longer exists), sanitize it for the filesystem and avoid overwriting existing files
 - MP4 now downloads a single stream containing both audio and video

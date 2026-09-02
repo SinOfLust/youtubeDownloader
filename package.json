@@ -36,6 +36,7 @@
     "test-watch": "vitest",
     "package": "npm run build && electron-builder --publish never",
     "package-win": "npm run build && electron-builder --win --publish never",
+    "package-win-portable": "npm run build && electron-builder --win portable --publish never",
     "package-mac": "npm run build && electron-builder --mac --publish never",
     "package-linux": "npm run build && electron-builder --linux --publish never"
   },
@@ -79,9 +80,13 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "portable"
       ],
       "icon": "resources/icon.ico"
+    },
+    "portable": {
+      "artifactName": "YouTube-Downloader-${version}-portable.${ext}"
     },
     "nsis": {
       "oneClick": false,

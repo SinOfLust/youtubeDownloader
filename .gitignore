@@ -6,6 +6,9 @@ out/
 dist/
 release/
 
+# Downloaded binaries (fetched by postinstall, bundled at package time)
+resources/bin/
+
 # Logs
 *.log
 npm-debug.log*

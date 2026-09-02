@@ -1,4 +1,13 @@
 # 2.0.0
+- Replace the download engine with **yt-dlp + FFmpeg**. `@distube/ytdl-core`
+  can no longer decipher YouTube's current player ("Could not parse decipher
+  function"), so downloads produced nothing. yt-dlp is the actively maintained
+  tool that tracks YouTube; FFmpeg (bundled via `ffmpeg-static`) merges MP4 and
+  produces real MP3. The yt-dlp binary is fetched on install and bundled by
+  electron-builder (extraResources); FFmpeg is unpacked from the asar.
+- Add logging (electron-log, file + console), surface the real error in the UI,
+  add an "Open logs" button, and harden the renderer so failures can no longer
+  happen silently.
 - Full modernization so the app builds and runs on current Node (18/20/22).
   Rebuilt on **electron-vite + Vite 5 + React 18 + TypeScript 5**, replacing the
   2020-era electron-react-boilerplate stack (webpack 4, Babel, node-sass) that

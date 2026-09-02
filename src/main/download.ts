@@ -1,86 +1,81 @@
 /**
- * Pure helpers for turning the user's format/quality choice into
- * ytdl-core download options and a safe output filename.
+ * Pure helpers for driving yt-dlp: building its argument list and parsing its
+ * line-based output. Free of Electron / process side-effects so they can be
+ * unit tested.
+ */
+import type { MediaType, Quality } from '../shared/ipc';
+
+export interface BuildArgsInput {
+  url: string;
+  format: MediaType;
+  quality: Quality;
+  destDir: string;
+  ffmpegPath: string;
+  /** yt-dlp output template, defaults to "<title>.<ext>". */
+  outputTemplate?: string;
+}
+
+/**
+ * Translate the UI selection into a yt-dlp command line.
  *
- * Free of Electron / filesystem side-effects so it can be unit tested.
+ * - MP4 muxes the best (or worst) video+audio into a single .mp4 (FFmpeg).
+ * - MP3 extracts the audio track and re-encodes it to real MP3 (FFmpeg).
  */
+export function buildYtDlpArgs(input: BuildArgsInput): string[] {
+  const { url, format, quality, destDir, ffmpegPath } = input;
+  const template = input.outputTemplate ?? '%(title)s.%(ext)s';
+  const output = `${destDir}/${template}`;
 
-export type MediaContainer = 'mp4' | 'mp3';
+  const common = [
+    '--no-playlist',
+    '--newline',
+    '--no-mtime',
+    '--ffmpeg-location',
+    ffmpegPath,
+    '-o',
+    output
+  ];
 
-export interface DownloadOptions {
-  /** ytdl-core stream filter. */
-  filter: 'audioandvideo' | 'audioonly';
-  /** ytdl-core quality label. */
-  quality: 'highest' | 'lowest' | 'highestaudio' | 'lowestaudio';
-  /** File extension / container to write. */
-  container: MediaContainer;
-}
-
-// Characters that are illegal in file names on Windows and macOS.
-// Spaces and hyphens are intentionally preserved.
-const ILLEGAL_FILENAME_CHARS = /[<>:"/\\|?*]/g;
-
-/**
- * Strip illegal characters, collapse whitespace and cap the length so the
- * resulting name is a valid path segment on every platform.
- */
-export function sanitizeFilename(title: string): string {
-  const cleaned = (title || '')
-    .replace(ILLEGAL_FILENAME_CHARS, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 100)
-    .trim();
-
-  return cleaned || 'video';
-}
-
-/**
- * Translate the UI selection ("mp4"/"mp3" + "highest"/"lowest") into the
- * options ytdl-core actually understands. For video we request a single
- * stream that already contains audio so the saved file is playable as-is.
- */
-export function resolveDownloadOptions(
-  format: string,
-  quality: string
-): DownloadOptions {
-  const wantsLowest = quality === 'lowest';
-
+  let selection: string[];
   if (format === 'mp3') {
-    return {
-      filter: 'audioonly',
-      quality: wantsLowest ? 'lowestaudio' : 'highestaudio',
-      container: 'mp3'
-    };
+    selection = [
+      '-x',
+      '--audio-format',
+      'mp3',
+      '--audio-quality',
+      quality === 'lowest' ? '9' : '0'
+    ];
+  } else {
+    selection = [
+      '-f',
+      quality === 'lowest' ? 'wv*+wa/w' : 'bv*+ba/b',
+      '--merge-output-format',
+      'mp4'
+    ];
   }
 
-  return {
-    filter: 'audioandvideo',
-    quality: wantsLowest ? 'lowest' : 'highest',
-    container: 'mp4'
-  };
+  return [...selection, ...common, url];
 }
 
-/**
- * Build a collision-free destination path. `join` and `exists` are injected
- * (the caller passes `path.join` and `fs.existsSync`) so this stays pure and
- * testable. If `name.ext` is taken it appends " (1)", " (2)", ... until free.
- */
-export function buildOutputPath(
-  join: (dir: string, file: string) => string,
-  dir: string,
-  title: string,
-  container: MediaContainer,
-  exists: (candidate: string) => boolean
-): string {
-  const base = sanitizeFilename(title);
-  let candidate = join(dir, `${base}.${container}`);
-  let counter = 1;
+/** Parse a download-progress percentage (0-100) from a yt-dlp output line. */
+export function parseProgress(line: string): number | null {
+  const match = line.match(/^\[download\]\s+([\d.]+)%/);
+  if (!match) return null;
+  const percent = Number(match[1]);
+  return Number.isFinite(percent) ? percent : null;
+}
 
-  while (exists(candidate)) {
-    candidate = join(dir, `${base} (${counter}).${container}`);
-    counter += 1;
+/** Parse the final output file path from a yt-dlp output line, if present. */
+export function parseDestination(line: string): string | null {
+  const patterns = [
+    /^\[Merger\] Merging formats into "(.+)"$/,
+    /^\[ExtractAudio\] Destination:\s+(.+)$/,
+    /^\[download\] Destination:\s+(.+)$/,
+    /^\[download\] (.+) has already been downloaded$/
+  ];
+  for (const pattern of patterns) {
+    const match = line.match(pattern);
+    if (match) return match[1].trim();
   }
-
-  return candidate;
+  return null;
 }

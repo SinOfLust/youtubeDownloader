@@ -14,13 +14,15 @@ Built with **Electron + Vite + React + TypeScript**. No malware, no ads.
 ## Requirements
 
 - [Node.js](https://nodejs.org/) **18, 20 or newer** (includes npm)
+- An internet connection for the first `npm install` (it downloads the yt-dlp
+  binary)
 
 ## Run from source
 
 ```bash
 git clone https://github.com/SinOfLust/youtubeDownloader.git
 cd youtubeDownloader
-npm install
+npm install          # also downloads yt-dlp into resources/bin/
 npm run dev
 ```
 
@@ -52,13 +54,17 @@ src/
 - `contextIsolation` is on and `nodeIntegration` is off. The renderer never
   touches Node directly; it talks to the main process through a small, typed
   `window.api` exposed by the preload script.
-- Downloads use [`@distube/ytdl-core`](https://github.com/distubejs/ytdl-core),
-  an actively maintained fork that tracks changes to YouTube. If a download
-  ever stops working, update it: `npm install @distube/ytdl-core@latest`.
-- MP4 downloads pick a single stream that already contains audio and video, so
-  the saved file plays without any extra processing.
-- MP3 downloads save the raw audio track under an `.mp3` name; they are not
-  re-encoded to the MP3 codec (that would require bundling FFmpeg).
+- Downloads are powered by [**yt-dlp**](https://github.com/yt-dlp/yt-dlp), the
+  actively maintained downloader, invoked as a bundled subprocess. The binary is
+  fetched on `npm install` (`scripts/download-ytdlp.mjs`) and shipped with the
+  installer. To update it, delete `resources/bin/` and reinstall, or drop a new
+  `yt-dlp` binary there.
+- [**FFmpeg**](https://ffmpeg.org/) is bundled via `ffmpeg-static` and used to
+  merge the best video+audio into MP4 and to convert audio to real MP3.
+- MP4 = best (or worst) video merged with audio into a single `.mp4`.
+  MP3 = audio extracted and re-encoded to MP3.
+- If a specific video ever fails, check the log (the **Open logs** button in the
+  app) for the exact yt-dlp error.
 
 ## Scripts
 

@@ -1,22 +1,29 @@
-import { join, dirname } from 'path';
+import { join, dirname, basename, extname } from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import { app, shell, BrowserWindow, ipcMain, dialog, clipboard } from 'electron';
 import log from 'electron-log/main';
-import ytdl from '@distube/ytdl-core';
+import ffmpegStatic from 'ffmpeg-static';
 import { IPC, DownloadRequest, DownloadResult } from '../shared/ipc';
-import { resolveDownloadOptions, buildOutputPath } from './download';
+import { buildYtDlpArgs, parseProgress, parseDestination } from './download';
 
 const isDev = !app.isPackaged;
 
-// A desktop User-Agent reduces (does not eliminate) YouTube "confirm you're not
-// a bot" responses on requests made without a signed-in session.
-const requestOptions = {
-  headers: {
-    'user-agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-  }
-};
+/** Absolute path to the bundled yt-dlp binary for this platform. */
+function ytDlpPath(): string {
+  const name = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+  const dir = app.isPackaged
+    ? join(process.resourcesPath, 'bin')
+    : join(app.getAppPath(), 'resources', 'bin');
+  return join(dir, name);
+}
+
+/** Absolute path to the bundled ffmpeg binary (from ffmpeg-static). */
+function ffmpegPath(): string {
+  const p = (ffmpegStatic as unknown as string) || '';
+  // In a packaged app the binary lives in app.asar.unpacked, not the asar.
+  return app.isPackaged ? p.replace('app.asar', 'app.asar.unpacked') : p;
+}
 
 function setupLogging(): void {
   log.initialize();
@@ -25,16 +32,8 @@ function setupLogging(): void {
   log.errorHandler.startCatching();
   log.info(`Starting YouTube Downloader ${app.getVersion()} (dev=${isDev})`);
   log.info(`Log file: ${log.transports.file.getFile().path}`);
-}
-
-/** Reject if `promise` does not settle within `ms`. */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms)
-    )
-  ]);
+  log.info(`yt-dlp: ${ytDlpPath()}`);
+  log.info(`ffmpeg: ${ffmpegPath()}`);
 }
 
 function createWindow(): void {
@@ -69,6 +68,96 @@ function createWindow(): void {
   }
 }
 
+function runDownload(
+  req: DownloadRequest,
+  onProgress: (percent: number) => void
+): Promise<DownloadResult> {
+  return new Promise((resolve) => {
+    const bin = ytDlpPath();
+    if (!fs.existsSync(bin)) {
+      resolve({
+        ok: false,
+        error:
+          'The yt-dlp downloader is missing. Please reinstall the app (or run npm install).'
+      });
+      return;
+    }
+
+    const args = buildYtDlpArgs({
+      url: req.url,
+      format: req.format,
+      quality: req.quality,
+      destDir: req.destDir,
+      ffmpegPath: ffmpegPath()
+    });
+
+    log.info(`Running: ${bin} ${args.join(' ')}`);
+
+    let finalPath = '';
+    let lastError = '';
+
+    const child = spawn(bin, args, { windowsHide: true });
+
+    const handleLine = (line: string): void => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      const percent = parseProgress(trimmed);
+      if (percent !== null) {
+        onProgress(percent);
+        return;
+      }
+      const dest = parseDestination(trimmed);
+      if (dest) finalPath = dest;
+      if (/^ERROR:/.test(trimmed)) lastError = trimmed.replace(/^ERROR:\s*/, '');
+      log.info(`[yt-dlp] ${trimmed}`);
+    };
+
+    let outBuffer = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      outBuffer += chunk.toString();
+      const lines = outBuffer.split(/\r?\n/);
+      outBuffer = lines.pop() ?? '';
+      lines.forEach(handleLine);
+    });
+
+    let errBuffer = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      errBuffer += chunk.toString();
+      const lines = errBuffer.split(/\r?\n/);
+      errBuffer = lines.pop() ?? '';
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        if (/^ERROR:/.test(trimmed)) lastError = trimmed.replace(/^ERROR:\s*/, '');
+        log.warn(`[yt-dlp:err] ${trimmed}`);
+      });
+    });
+
+    child.on('error', (err) => {
+      resolve({ ok: false, error: `Could not start yt-dlp: ${err.message}` });
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        onProgress(100);
+        const title = finalPath
+          ? basename(finalPath, extname(finalPath))
+          : 'video';
+        log.info(`Download finished: ${finalPath || req.destDir}`);
+        resolve({ ok: true, filePath: finalPath || req.destDir, title });
+      } else {
+        const error =
+          lastError ||
+          'The video could not be downloaded. It may be private, ' +
+            'region-locked, or the format is unavailable.';
+        log.error(`yt-dlp exited with code ${code}: ${error}`);
+        resolve({ ok: false, error });
+      }
+    });
+  });
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle(IPC.readClipboard, () => clipboard.readText().trim());
 
@@ -84,7 +173,6 @@ function registerIpcHandlers(): void {
     shell.openPath(dirname(log.transports.file.getFile().path))
   );
 
-  // Forward renderer-side logs/errors into the same log file.
   ipcMain.on(IPC.rendererLog, (_event, level: string, message: string) => {
     if (level === 'error') log.error(`[renderer] ${message}`);
     else log.info(`[renderer] ${message}`);
@@ -93,93 +181,19 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC.download,
     async (event, req: DownloadRequest): Promise<DownloadResult> => {
-      const { url, format, quality, destDir } = req;
-      log.info(`Download requested: ${format}/${quality} ${url} -> ${destDir}`);
+      log.info(`Download requested: ${req.format}/${req.quality} ${req.url}`);
 
-      if (!url || !ytdl.validateURL(url)) {
+      if (!req.url || !/^https?:\/\/.+/.test(req.url)) {
         return { ok: false, error: 'Please paste a valid YouTube URL.' };
       }
-      if (!destDir) {
+      if (!req.destDir) {
         return { ok: false, error: 'No destination folder selected.' };
       }
 
-      const options = resolveDownloadOptions(format, quality);
-
-      let title: string;
-      try {
-        const info = await withTimeout(
-          ytdl.getInfo(url, { requestOptions }),
-          30000,
-          'Fetching video info'
-        );
-        title = info.videoDetails.title;
-        log.info(`Video info OK: "${title}"`);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.error('getInfo failed:', message);
-        return {
-          ok: false,
-          error: `Could not fetch the video: ${message}`
-        };
-      }
-
-      const filePath = buildOutputPath(
-        join,
-        destDir,
-        title,
-        options.container,
-        fs.existsSync
-      );
-      log.info(`Saving to: ${filePath}`);
-
-      return new Promise<DownloadResult>((resolve) => {
-        let settled = false;
-        const finish = (result: DownloadResult): void => {
-          if (settled) return;
-          settled = true;
-          if (result.ok) log.info(`Download finished: ${result.filePath}`);
-          else log.error(`Download failed: ${result.error}`);
-          resolve(result);
-        };
-
-        let stream: ReturnType<typeof ytdl>;
-        try {
-          stream = ytdl(url, {
-            filter: options.filter,
-            quality: options.quality,
-            requestOptions
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          finish({ ok: false, error: `The selected format is not available: ${message}` });
-          return;
+      return runDownload(req, (percent) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(IPC.progress, Number(percent.toFixed(2)));
         }
-
-        const file = fs.createWriteStream(filePath);
-
-        stream.on('progress', (_chunk: number, downloaded: number, total: number) => {
-          const percent = total > 0 ? (downloaded / total) * 100 : 0;
-          if (!event.sender.isDestroyed()) {
-            event.sender.send(IPC.progress, Number(percent.toFixed(2)));
-          }
-        });
-
-        stream.on('error', (err: Error) => {
-          file.destroy();
-          finish({ ok: false, error: `Download failed: ${err.message}` });
-        });
-
-        file.on('error', (err: Error) => {
-          stream.destroy();
-          finish({ ok: false, error: `Could not save the file: ${err.message}` });
-        });
-
-        file.on('finish', () => {
-          if (!event.sender.isDestroyed()) event.sender.send(IPC.progress, 100);
-          finish({ ok: true, filePath, title });
-        });
-
-        stream.pipe(file);
       });
     }
   );

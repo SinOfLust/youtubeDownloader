@@ -29,15 +29,22 @@ npm run dev
 ## Build an installer
 
 ```bash
-npm run package          # for the current OS
-npm run package-win      # Windows .exe (NSIS wizard)
-npm run package-mac      # macOS .dmg
-npm run package-linux    # Linux AppImage + .deb
+npm run package              # for the current OS
+npm run package-win          # Windows: NSIS installer + portable .exe
+npm run package-win-portable # Windows: portable .exe only
+npm run package-mac          # macOS .dmg
+npm run package-linux        # Linux AppImage + .deb
 ```
 
-Installers are written to the `release/` folder. On Windows the wizard lets the
-user pick the install folder and creates desktop / start-menu shortcuts, so it
-installs like any classic application.
+Artifacts are written to the `release/` folder. On Windows you get two files:
+
+- `YouTube Downloader Setup <version>.exe` — a classic install wizard (pick the
+  folder, desktop / start-menu shortcuts).
+- `YouTube-Downloader-<version>-portable.exe` — a single self-contained `.exe`
+  that runs without installing anything (double-click, or copy to a USB stick).
+
+Both are unsigned, so on first launch Windows SmartScreen shows "Unknown
+publisher" — choose **More info → Run anyway**.
 
 ## Project layout
 

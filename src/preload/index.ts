@@ -21,7 +21,14 @@ const api = {
       callback(percent);
     ipcRenderer.on(IPC.progress, listener);
     return () => ipcRenderer.removeListener(IPC.progress, listener);
-  }
+  },
+
+  /** Open the folder containing the log file in the OS file manager. */
+  openLogs: (): Promise<string> => ipcRenderer.invoke(IPC.openLogs),
+
+  /** Forward a renderer-side message/error into the main log file. */
+  log: (level: 'info' | 'error', message: string): void =>
+    ipcRenderer.send(IPC.rendererLog, level, message)
 };
 
 export type DownloaderApi = typeof api;

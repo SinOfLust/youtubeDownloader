@@ -19,5 +19,7 @@ export const IPC = {
   chooseFolder: 'dialog:chooseFolder',
   readClipboard: 'clipboard:read',
   download: 'download:start',
-  progress: 'download:progress'
+  progress: 'download:progress',
+  rendererLog: 'log:renderer',
+  openLogs: 'log:open'
 } as const;

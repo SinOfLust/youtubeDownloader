@@ -1,11 +1,40 @@
-import { join } from 'path';
+import { join, dirname, basename, extname } from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import { app, shell, BrowserWindow, ipcMain, dialog, clipboard } from 'electron';
-import ytdl from '@distube/ytdl-core';
+import log from 'electron-log/main';
+import ffmpegStatic from 'ffmpeg-static';
 import { IPC, DownloadRequest, DownloadResult } from '../shared/ipc';
-import { resolveDownloadOptions, buildOutputPath } from './download';
+import { buildYtDlpArgs, parseProgress, parseDestination } from './download';
 
 const isDev = !app.isPackaged;
+
+/** Absolute path to the bundled yt-dlp binary for this platform. */
+function ytDlpPath(): string {
+  const name = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+  const dir = app.isPackaged
+    ? join(process.resourcesPath, 'bin')
+    : join(app.getAppPath(), 'resources', 'bin');
+  return join(dir, name);
+}
+
+/** Absolute path to the bundled ffmpeg binary (from ffmpeg-static). */
+function ffmpegPath(): string {
+  const p = (ffmpegStatic as unknown as string) || '';
+  // In a packaged app the binary lives in app.asar.unpacked, not the asar.
+  return app.isPackaged ? p.replace('app.asar', 'app.asar.unpacked') : p;
+}
+
+function setupLogging(): void {
+  log.initialize();
+  log.transports.file.level = 'info';
+  log.transports.console.level = 'debug';
+  log.errorHandler.startCatching();
+  log.info(`Starting YouTube Downloader ${app.getVersion()} (dev=${isDev})`);
+  log.info(`Log file: ${log.transports.file.getFile().path}`);
+  log.info(`yt-dlp: ${ytDlpPath()}`);
+  log.info(`ffmpeg: ${ffmpegPath()}`);
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -27,18 +56,106 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => mainWindow.show());
 
-  // Open external links in the user's browser, never inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  // electron-vite injects the dev server URL in development.
   if (isDev && process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
+}
+
+function runDownload(
+  req: DownloadRequest,
+  onProgress: (percent: number) => void
+): Promise<DownloadResult> {
+  return new Promise((resolve) => {
+    const bin = ytDlpPath();
+    if (!fs.existsSync(bin)) {
+      resolve({
+        ok: false,
+        error:
+          'The yt-dlp downloader is missing. Please reinstall the app (or run npm install).'
+      });
+      return;
+    }
+
+    const args = buildYtDlpArgs({
+      url: req.url,
+      format: req.format,
+      quality: req.quality,
+      destDir: req.destDir,
+      ffmpegPath: ffmpegPath()
+    });
+
+    log.info(`Running: ${bin} ${args.join(' ')}`);
+
+    let finalPath = '';
+    let lastError = '';
+
+    const child = spawn(bin, args, { windowsHide: true });
+
+    const handleLine = (line: string): void => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      const percent = parseProgress(trimmed);
+      if (percent !== null) {
+        onProgress(percent);
+        return;
+      }
+      const dest = parseDestination(trimmed);
+      if (dest) finalPath = dest;
+      if (/^ERROR:/.test(trimmed)) lastError = trimmed.replace(/^ERROR:\s*/, '');
+      log.info(`[yt-dlp] ${trimmed}`);
+    };
+
+    let outBuffer = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      outBuffer += chunk.toString();
+      const lines = outBuffer.split(/\r?\n/);
+      outBuffer = lines.pop() ?? '';
+      lines.forEach(handleLine);
+    });
+
+    let errBuffer = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      errBuffer += chunk.toString();
+      const lines = errBuffer.split(/\r?\n/);
+      errBuffer = lines.pop() ?? '';
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        if (/^ERROR:/.test(trimmed)) lastError = trimmed.replace(/^ERROR:\s*/, '');
+        log.warn(`[yt-dlp:err] ${trimmed}`);
+      });
+    });
+
+    child.on('error', (err) => {
+      resolve({ ok: false, error: `Could not start yt-dlp: ${err.message}` });
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        onProgress(100);
+        const title = finalPath
+          ? basename(finalPath, extname(finalPath))
+          : 'video';
+        log.info(`Download finished: ${finalPath || req.destDir}`);
+        resolve({ ok: true, filePath: finalPath || req.destDir, title });
+      } else {
+        const error =
+          lastError ||
+          'The video could not be downloaded. It may be private, ' +
+            'region-locked, or the format is unavailable.';
+        log.error(`yt-dlp exited with code ${code}: ${error}`);
+        resolve({ ok: false, error });
+      }
+    });
+  });
 }
 
 function registerIpcHandlers(): void {
@@ -52,95 +169,38 @@ function registerIpcHandlers(): void {
     return result.filePaths[0];
   });
 
+  ipcMain.handle(IPC.openLogs, () =>
+    shell.openPath(dirname(log.transports.file.getFile().path))
+  );
+
+  ipcMain.on(IPC.rendererLog, (_event, level: string, message: string) => {
+    if (level === 'error') log.error(`[renderer] ${message}`);
+    else log.info(`[renderer] ${message}`);
+  });
+
   ipcMain.handle(
     IPC.download,
     async (event, req: DownloadRequest): Promise<DownloadResult> => {
-      const { url, format, quality, destDir } = req;
+      log.info(`Download requested: ${req.format}/${req.quality} ${req.url}`);
 
-      if (!url || !ytdl.validateURL(url)) {
+      if (!req.url || !/^https?:\/\/.+/.test(req.url)) {
         return { ok: false, error: 'Please paste a valid YouTube URL.' };
       }
-      if (!destDir) {
+      if (!req.destDir) {
         return { ok: false, error: 'No destination folder selected.' };
       }
 
-      const options = resolveDownloadOptions(format, quality);
-
-      let title: string;
-      try {
-        const info = await ytdl.getInfo(url);
-        title = info.videoDetails.title;
-      } catch {
-        return {
-          ok: false,
-          error:
-            'Could not fetch the video. It may be private, age-restricted or unavailable.'
-        };
-      }
-
-      const filePath = buildOutputPath(
-        join,
-        destDir,
-        title,
-        options.container,
-        fs.existsSync
-      );
-
-      return new Promise<DownloadResult>((resolve) => {
-        let settled = false;
-        const finish = (result: DownloadResult): void => {
-          if (settled) return;
-          settled = true;
-          resolve(result);
-        };
-
-        let stream: ReturnType<typeof ytdl>;
-        try {
-          stream = ytdl(url, {
-            filter: options.filter,
-            quality: options.quality
-          });
-        } catch {
-          finish({
-            ok: false,
-            error: 'The selected format is not available for this video.'
-          });
-          return;
+      return runDownload(req, (percent) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(IPC.progress, Number(percent.toFixed(2)));
         }
-
-        const file = fs.createWriteStream(filePath);
-
-        stream.on('progress', (_chunk: number, downloaded: number, total: number) => {
-          const percent = total > 0 ? (downloaded / total) * 100 : 0;
-          if (!event.sender.isDestroyed()) {
-            event.sender.send(IPC.progress, Number(percent.toFixed(2)));
-          }
-        });
-
-        stream.on('error', (err: Error) => {
-          file.destroy();
-          finish({ ok: false, error: `Download failed: ${err.message}` });
-        });
-
-        file.on('error', (err: Error) => {
-          stream.destroy();
-          finish({ ok: false, error: `Could not save the file: ${err.message}` });
-        });
-
-        file.on('finish', () => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send(IPC.progress, 100);
-          }
-          finish({ ok: true, filePath, title });
-        });
-
-        stream.pipe(file);
       });
     }
   );
 }
 
 app.whenReady().then(() => {
+  setupLogging();
   registerIpcHandlers();
   createWindow();
 
